@@ -98,10 +98,10 @@
   URL 설계 및 RESTfull API 구성
   model - form 구성
   
-- Google Ai Studio
+- Google Ai Studio : 
   프론트엔드 ui 생성
 
-- Cursor
+- Cursor : 
   API 설계 평가 및 작성
   에러 구조 파악 및 수정
 
