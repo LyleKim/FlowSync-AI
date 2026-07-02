@@ -1,108 +1,111 @@
-# 📋 Product Requirements Document (PRD) - FlowSync AI
+# FlowSyncAI
 
-**프로젝트 명**: FlowSync AI (태스크 매니지먼트 대시보드)  
-**버전**: v1.0.0 Stable  
-**문서 유형**: 제품 요구사항 정의서 (PRD) 겸 사용자 가이드  
+팀 프로젝트 중 소통 부족으로 인해 불필요한 작업을 하게 되는 문제와, 프로젝트가 끝난 후 과거에 처리했던 이슈에 대한 기억이 흐릿해져 이를 다시 떠올리기 어려운 불편함을 해결하기 위해 시작된 프로젝트입니다.
 
----
 
-## 1. 제품 개요 (Product Overview)
-**FlowSync AI**는 단순한 할 일 관리를 넘어 프로젝트의 진행 상황, 다중 역할 검토(Role Review), 그리고 실시간 활동 분석을 한눈에 확인할 수 있는 고성능 인터랙티브 **작업 관리 대시보드(Task Management Dashboard)**입니다.  
-세련된 다크 및 라이트 모드 대응 디자인, 유기적인 탭 전환 인터페이스, 그리고 디테일한 상태 관리를 제공하여 협업 효율성을 극대화합니다.
+## What is it for?
+- AS-IS
 
----
+팀 프로젝트를 할 때는 초기에 개발 방향을 정하고 역할을 분담하여 개발을 진행합니다.
+이러한 계획에 따라 개인은 다른 팀원의 결과물을 미리 예상하며 자신에게 할당된 작업을 진행하게 됩니다.
+그러나 소통 부족이나 세부 사항을 미처 파악하지 못하는 등의 이유로 예상과 전혀 다른 작업 결과물을 전달받게 되면,
+사전에 진행했던 작업들이 불필요해지는 낭비가 발생합니다.
 
-## 2. 핵심 비전 및 설계 철학 (Core Vision & Design Philosophy)
-- **맥락 보존과 원활한 흐름**: 사용자가 복잡한 모달이나 심층 작업 화면에서 탐색을 진행하더라도, 메인 메뉴의 내비게이션을 클릭하면 언제든지 최상위 메인 페이지로 부드럽게 초기화 및 복귀(Redirect)할 수 있도록 설계합니다.
-- **오동작 방지 및 높은 사용성**: 중요 액션(예: 작업 삭제) 시 브라우저 내장 팝업의 제약을 극복하고, UI 내에서 명확하고 세련된 안전장치(안전 컨펌 버튼 흐름)를 제공합니다.
-- **간결함과 직관성**: 불필요한 인프라성 로깅, 디버그 메타데이터, 중복 설명을 과감히 배제하여 사용자가 작업 본연에만 완벽히 집중할 수 있게 만듭니다.
+또한,
 
----
+팀 프로젝트가 끝난 이후 발생했던 특정 이슈에 대해 팀원들과 나누었던 대화나 대처했던 내용들을 완전히 체득하고자 다시 상기(리마인드)하려 할 때, 기억이 가물가물하여 어려움을 겪을 때가 많습니다.
 
-## 3. 핵심 기능 요구사항 (Key Functional Requirements)
+- TO-BE
 
-### 3.1. 통합 내비게이션 및 사이드바 (Sidebar & Tab Navigation)
-사이드바는 시스템의 중추 역할을 수행하며, 메인 탭 전환 시 작업 맥락을 세련되게 정리합니다.
-- **메인 메뉴 탭 구성**:
-  1. **칸반 보드 (Kanban Board)**
-  2. **모든 작업 (All Tasks)**
-  3. **분석 (Analytics)**
-- **탐색 초기화 규칙 (Navigation Focus Reset)**:
-  - 사용자가 특정 탭(예: 칸반 보드)의 특정 상태 카드를 클릭하여 상세 페이지를 보거나 작업을 수정 중인 상태이더라도, 사이드바에서 메인 탭 이름("칸반 보드", "모든 작업", "분석")을 클릭하는 순간, **해당 탭의 메인 첫 화면으로 리다이렉션** 및 선택 상태가 클리어됩니다.
-- **디자인 사양**: 불필요한 워크스페이스 메타데이터 풋터를 제거하고 클릭이 가능한 모든 탭은 `cursor-pointer` 피드백을 확실히 제공합니다.
+해야 할 일이나 발생한 이슈 등을 하나의 "작업" 단위로 생성하고, 해당 작업에 대한 진행 상황을 상세히 남김으로써
+다른 팀원들이 전체적인 진행 상황과 개발 방향을 쉽게 파악할 수 있도록 합니다.
+또한, 팀원들이 남긴 기록을 바탕으로 AI를 활용하여 앞으로 내가 진행해야 할 일을 추천받을 수 있도록 지원합니다.
 
-### 3.2. 칸반 보드 및 단계별 상세 작업 관리 (Task Board)
-프로젝트 단계를 한눈에 식별하고 상호작용할 수 있는 그리드형 인터페이스를 제공합니다.
-- **4단계 라이프사이클**: `To Do(할 일)`, `In Progress(진행 중)`, `Review(검토 중)`, `Done(완료)`
-- **간결한 헤더 정보**:
-  - 기존의 장황한 부연 설명("아래의 진행 단계를 클릭하면...") 및 "워크플로우 포털" 배지를 제거하였습니다.
-  - 최상위 메인 안내 메시지인 **"단계를 선택하여 작업을 확인하세요"**를 더 크고 볼드하게 배치하여 시각적 계층 구조를 강화했습니다.
-- **필터링 및 검색**: 상단 실시간 검색 기능과 유기적으로 연동되어 태스크 리스트를 동적으로 갱신합니다.
+더욱이 작업 단위로 꼼꼼하게 기록된 이슈들을 통해 팀원들과 내가 내렸던 과거의 의사 결정 과정을 보다 효과적이고 명확하게 확인할 수 있습니다.
 
-### 3.3. 작업 상세 정보 및 내부 프로세스 관리 (Task Detail Modal)
-개별 작업의 심층 정보 및 프로세스 흐름을 정교하게 관리합니다.
-- **작업 생성자 명시**:
-  - 기존에 혼용되던 '담당자' 용어를 실제 제품 목적에 일치하도록 **'작업 생성자'**로 통일 및 재정의했습니다. (인풋 플레이스홀더: `"작업 생성자 이름 입력..."`)
-- **UI 내장 안전 삭제 흐름 (Safe In-UI Deletion)**:
-  - iframe 환경 등에서 차단되거나 다소 딱딱한 브라우저의 `window.confirm` 대화상자 대신, 대화상자 상단의 "작업 삭제" 버튼 클릭 시 UI 내에서 즉각 **"정말 삭제하시겠습니까? [삭제] [취소]"** 형태의 인라인 확인 컨펌 레이아웃이 노출됩니다.
-  - 사용자가 최종 **[삭제]**를 선택하면, 해당 작업이 완전히 삭제 처리된 후 모달이 닫히며 자동으로 **메인 칸반 보드 페이지(To-Do 상태 리스트)로 즉시 리다이렉트**됩니다.
-- **하위 태스크(SubTask) 및 마일스톤**: 하위 작업들의 체크 상태를 분석하여 진행률 배지(ProgressBar)를 생성합니다.
-- **역할군별 검토 기능 (Role Review)**: 각 역할군별 의견과 상태 수락(Accept) 여부를 추가할 수 있습니다.
-  - 특히, **"다음 검토할 사람 지정 (태그)"** 입력 필드를 고정된 셀렉트(Dropdown) 방식이 아닌 자유롭게 타이핑할 수 있는 **텍스트 입력(Text Input) 형태**로 변경하여, 조직 구조나 팀원 추가 상황에 유연하고 민첩하게 대처할 수 있도록 개선했습니다.
+<br/>
 
-### 3.4. 활성 로그 피드 (Activity Stream)
-- 시스템 내부에서 발생하는 모든 생성, 수정, 완료, 삭제 이벤트를 수집하여 타임스탬프와 함께 우측 사이드바 스트림에 실시간 기록합니다.
 
----
 
-## 4. 데이터 스펙 및 구조 (Technical Data Structures)
+## How to start develop?
 
-### 4.1. Task (작업 객체)
-```typescript
-export interface Task {
-  id: string;               // 고유 ID
-  title: string;            // 작업 제목
-  description: string;      // 상세 내용
-  status: TaskStatus;       // 'todo' | 'inprogress' | 'review' | 'done'
-  priority: TaskPriority;   // 'low' | 'medium' | 'high' | 'urgent'
-  category: string;         // 카테고리 (예: 기획, 개발, 디자인 등)
-  dueDate: string;          // 마감 기한
-  assigneeId: string;       // 작업 생성자 ID
-  subtasks: SubTask[];      // 하위 작업 배열
-  createdAt: string;        // 생성 시간
-  roles?: string[];         // 연관 역할군 목록
-  roleReviews?: RoleReview[]; // 역할별 검토 내역
-}
-```
+### Before you start dev
+- Groq에서 API를 발급 받아 환경변수에 추가해주셔야합니다. 자세한 사항은 .env.example을 참고바랍니다.
 
-### 4.2. Local Storage Persistence
-- 모든 추가/수정/삭제 사항은 브라우저 세션과 무관하게 지속되도록 `localStorage`에 즉각 직렬화 및 동기화 처리됩니다.
+  Groq: https://groq.com  
 
-### 4.3. 풀스택 백엔드 아키텍처 (Django + Gemini AI)
-FlowSync AI는 단일 앱에 모든 것을 집중시키는 구식 구조를 타파하고, 기능별 도메인 결합도를 낮춘 **느슨한 결합(Loose Coupling)의 4대 핵심 Django App 아키텍처**로 전면 설계 및 리팩토링되었습니다.
 
-- **백엔드 프레임워크**: Python Django (v4.2+) 기반 다중 애플리케이션(Multi-App) 설계
-- **도메인별 앱(App) 설계**:
-  - **`tasks` (작업 및 하위 작업)**: `Task` 및 `SubTask` DB 모델링과 CRUD REST API (`/api/v1/tasks/`)
-  - **`reviews` (검토 및 피드백)**: `Member`와 `RoleReview` 모델링, 역할군별 피드백 및 승인 통제 API (`/api/v1/reviews/`)
-  - **`activities` (활동 로그)**: 실시간 작업 라이프사이클 이벤트 타임라인 추적 API (`/api/v1/activities/`)
-  - **`ai_services` (AI 전담 연동)**: 최신 공식 `google-genai` Python SDK 기반의 지능형 스마트 체크리스트 생성 API (`/api/v1/generate-checklist`)
-- **Vite 개발 서버 리버스 프록시**: `vite.config.ts`에 단일 도메인 통신용 프록시(`proxy: { '/api': 'http://127.0.0.1:8000' }`) 탑재로 세션 유지 및 교차 출처 제약(CORS) 완벽 제거
+<br/>
 
----
+### Run to dev
 
-## 5. 변경 및 개선 이력 (Changelog Summary)
+[BackEnd]
+1. 최초 1회만 실시합니다.:
+    ```bash
+    
+    python -m venv .venv 
 
-| 버전 | 구분 | 내용 | 상세 적용 영역 |
-| :--- | :--- | :--- | :--- |
-| **v1.0.0** | **UI/UX** | 타이틀 브랜딩 수정 | `Sidebar.tsx` 내 "PriorityStream" -> "FlowSync AI" 변경 |
-| **v1.0.0** | **UI/UX** | 메인 헤더 단순화 및 시각적 강조 | `TaskBoard.tsx` 내 "워크플로우 포털" 배지 및 가이드 텍스트 삭제, 헤더 폰트 확대 |
-| **v1.0.0** | **기능** | 메인 메뉴 리액티브 내비게이션 개선 | 사이드바의 "칸반 보드", "모든 작업", "분석" 재클릭 시 선택 필터가 해제되고 각 탭의 메인 페이지로 이동 |
-| **v1.0.0** | **기능** | 작업 삭제 시 안전 장치 고도화 및 자동 복귀 | `TaskModal.tsx` 내 브라우저 컨펌 의존을 탈피하고 자체 안전 삭제 인라인 프롬프트 구현 및 삭제 시 메인 보드로 화면 리다이렉트 기능 통합 |
-| **v1.0.0** | **명칭 정립** | 명칭 일치성 강화 | 작업 상세 및 생성창에서 '담당자' 용어를 **'작업 생성자'**로 변경 및 수정 완료 |
-| **v1.0.0** | **UI/UX / 기능** | 검토자 지정 방식 유연화 | "다음 검토할 사람 지정 (태그)" 필드를 기존 드롭다운에서 자유롭게 텍스트 입력이 가능한 형태로 고도화 |
-| **v1.0.0** | **아키텍처 / AI** | Django 백엔드 리팩토링 및 프록시 설정 | `/backend` Django 구조 설계, `google-genai` 최신 라이브러리 연동 API 구현 및 `vite.config.ts` 프록시 구성 완료 |
+    pip install -r requirements.txt
 
----
+    
+    python manage.py migrate
 
-*본 FlowSync AI는 완벽한 화질 및 프레임 대응 레이아웃, 직관적인 UX 동선을 보장하며 Python Django 생태계의 비즈니스 강결함을 탑재했습니다.*
+    ```
+
+
+2.  To run:
+  
+    ```bash
+    
+    docker compose up --build 
+    
+
+    ```
+
+[FrontEnd]
+1. 최초 1회만 실행합니다.
+  
+    ```bash
+    
+    npm install
+    
+
+    ```
+
+2.  To run:
+  
+    ```bash
+    
+    npm run dev
+    
+
+    ```
+
+<br/>
+  
+## Main Contributors  
+<div style="display: inline-block; text-align: center; margin-right: 15px;">
+  <a href="https://github.com/LyleKim" target="_blank">
+    <img src="https://github.com/LyleKim.png" width="40" style="border-radius:50%;" alt="LyleKim" />
+  </a>
+  <div style="font-size: 12px; margin-top: 4px;">joonseok Kim(LyleKim)</div>
+</div>  
+
+<br/>
+
+
+<br/>
+
+## What we do
+- 김준석(Backend) :  
+  앱 설계
+  URL 설계 및 RESTfull API 구성
+  model - form 구성
+  
+- Google Ai Studio
+  프론트엔드 ui 생성
+
+- Cursor
+  API 설계 평가 및 작성
+
+<br/>
