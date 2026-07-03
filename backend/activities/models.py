@@ -1,8 +1,6 @@
 from django.db import models
 
 class ActivityLog(models.Model):
-    # 사용자가 선택할 수 있는 값들을 미리 정해놓은 리스트.
-    # DB에는 create로 저장되고, 화면에는 '생성'으로 나간다.
     ACTION_CHOICES = [
         ('create', '생성'),
         ('update', '수정'),

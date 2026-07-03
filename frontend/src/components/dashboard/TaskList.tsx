@@ -73,11 +73,10 @@ export default function TaskList({
 }: TaskListProps) {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [assigneeSearch, setAssigneeSearch] = useState<string>('');
-  const [sortBy, setSortBy] = useState<'dueDate' | 'createdAt'>('dueDate');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [sortBy, setSortBy] = useState<'createdAt'>('createdAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  // Handle sorting toggle
-  const handleSort = (field: 'dueDate' | 'createdAt') => {
+  const handleSort = (field: 'createdAt') => {
     if (sortBy === field) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
@@ -205,10 +204,10 @@ export default function TaskList({
                   </th>
                   <th className="py-4 px-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                     <button
-                      onClick={() => handleSort('dueDate')}
+                      onClick={() => handleSort('createdAt')}
                       className="flex items-center gap-1.5 hover:text-slate-800 dark:hover:text-slate-100 transition-colors"
                     >
-                      <span>마감일</span>
+                      <span>생성일</span>
                       <ArrowUpDown size={12} />
                     </button>
                   </th>
@@ -274,11 +273,15 @@ export default function TaskList({
                         </select>
                       </td>
 
-                      {/* Due Date with Calendar icon */}
+                      {/* Created At */}
                       <td className="py-4 px-4 whitespace-nowrap">
                         <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 font-mono">
                           <Calendar size={13} className="text-slate-400" />
-                          <span>{task.dueDate}</span>
+                          <span>
+                            {task.createdAt
+                              ? new Date(task.createdAt).toLocaleDateString('ko-KR')
+                              : '-'}
+                          </span>
                         </div>
                       </td>
 

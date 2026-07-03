@@ -1,50 +1,39 @@
-import json
 from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+
+from api.decorators import api_view
+from api.http import json_error, parse_json_body
+from api.idempotency import finalize_idempotent_response, replay_idempotent_response
+from .serializers import parse_checklist_request, parse_checklist_response
 from .services import run_checklist_generation
 
-@csrf_exempt
+
+@api_view
+@require_http_methods(['POST'])
 def generate_checklist(request):
-    if request.method != 'POST':
-        return JsonResponse({'error': 'POST method required'}, status=405)
-    
+    replay_response, idempotency_key = replay_idempotent_response(request, 'ai:generate-checklist')
+    if replay_response:
+        return replay_response
+
+    body, error_response = parse_json_body(request)
+    if error_response:
+        return error_response
+
+    parsed, errors = parse_checklist_request(body)
+    if errors:
+        return json_error('Validation failed', status=400, details={'fields': errors})
+
     try:
-        data = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON body'}, status=400)
-    
-    title = data.get('title', '').strip()
-    description = data.get('description', '').strip()
-    role_reviews = data.get('roleReviews', [])
-    
-    if not title:
-        return JsonResponse({'error': 'Title is required'}, status=400)
-    
-    # Build detailed context for Groq
-    reviews_str = ""
-    if role_reviews:
-        reviews_str = "\n".join([
-            f"- [{r.get('role', 'Unknown')}] {r.get('comment', '')} (Approved: {r.get('isAccepted', False)})"
-            for r in role_reviews if r.get('comment')
-        ])
-    
-    try:
-        result_text = run_checklist_generation(title, description, reviews_str)
-        result_text = result_text.strip()
-        
-        # Clean markdown json blocks if any are returned
-        if result_text.startswith("```"):
-            lines = result_text.split("\n")
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines[-1].startswith("```"):
-                lines = lines[:-1]
-            result_text = "\n".join(lines).strip()
-            
-        parsed_result = json.loads(result_text)
-        return JsonResponse(parsed_result)
-        
-    except Exception as e:
-        return JsonResponse({
-            'error': f'체크리스트 생성에 실패했습니다: {str(e)}'
-        }, status=500)
+        result_text = run_checklist_generation(
+            parsed['title'],
+            parsed['description'],
+            parsed['reviews_str'],
+        )
+        payload = parse_checklist_response(result_text)
+        return finalize_idempotent_response(
+            request, 'ai:generate-checklist', idempotency_key, 200, payload
+        )
+    except ValueError as exc:
+        return json_error(str(exc), status=502)
+    except Exception as exc:
+        return json_error(f'체크리스트 생성에 실패했습니다: {exc}', status=500)

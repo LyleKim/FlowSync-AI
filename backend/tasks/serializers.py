@@ -1,6 +1,8 @@
 import json
 import uuid
 
+from django.utils import timezone
+
 from reviews.models import RoleReview
 from reviews.serializers import serialize_review, map_review_body_to_model
 from reviews.forms import RoleReviewForm
@@ -32,7 +34,6 @@ def serialize_task(task):
         'status': task.status,
         'priority': task.priority,
         'category': task.category,
-        'dueDate': task.due_date,
         'assigneeId': task.creator or task.assignee_id,
         'subtasks': [
             {'id': subtask.id, 'title': subtask.title, 'completed': subtask.completed}
@@ -91,7 +92,6 @@ def task_payload_matches(existing, body):
         existing.status == body.get('status', existing.status),
         existing.priority == body.get('priority', existing.priority),
         existing.category == body.get('category', existing.category),
-        existing.due_date == body.get('dueDate', existing.due_date),
         (existing.creator or '') == (assignee or existing.creator or ''),
         (existing.assignee_id or '') == (assignee or existing.assignee_id or ''),
         existing.has_unreflected_review == body.get(
@@ -119,7 +119,7 @@ def task_payload_matches(existing, body):
 def _task_scalar_fields_changed(task, model_data):
     for field in (
         'title', 'description', 'creator', 'status', 'priority', 'category',
-        'due_date', 'assignee_id', 'roles', 'has_unreflected_review', 'last_review_added_at',
+        'assignee_id', 'roles', 'has_unreflected_review', 'last_review_added_at',
     ):
         if getattr(task, field) != model_data.get(field):
             return True
@@ -181,7 +181,6 @@ def map_body_to_model_data(body, instance=None):
         'status': body.get('status', instance.status if instance else 'todo'),
         'priority': body.get('priority', instance.priority if instance else 'medium'),
         'category': body.get('category', instance.category if instance else ''),
-        'due_date': body.get('dueDate', instance.due_date if instance else ''),
         'assignee_id': assignee or (instance.assignee_id if instance else ''),
         'has_unreflected_review': body.get(
             'hasUnreflectedReview',
@@ -320,10 +319,14 @@ def update_task_from_body(task, body):
         subtask_errors = save_subtasks(task, body.get('subtasks', []), replace=True)
         if subtask_errors:
             return None, subtask_errors
+        Task.objects.filter(pk=task.pk).update(updated_at=timezone.now())
+        task.refresh_from_db()
 
     if reviews_changed:
         review_errors = save_role_reviews(task, body.get('roleReviews', []), replace=True)
         if review_errors:
             return None, review_errors
+        Task.objects.filter(pk=task.pk).update(updated_at=timezone.now())
+        task.refresh_from_db()
 
     return task, None

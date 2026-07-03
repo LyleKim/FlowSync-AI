@@ -1,9 +1,11 @@
 from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.shortcuts import get_object_or_404
 
-from api.http import json_error, parse_json_body
+from django.utils import timezone
+
+from api.decorators import api_view
+from api.http import conditional_json_response, json_error, parse_json_body
 from api.idempotency import (
     finalize_idempotent_response,
     replay_idempotent_response,
@@ -14,14 +16,20 @@ from .serializers import (
     create_task_from_body,
     update_task_from_body,
 )
+from .services import get_tasks_last_modified, serialize_task_list
 
 
-@csrf_exempt
+@api_view
 @require_http_methods(['GET', 'POST'])
 def task_list_create(request):
     if request.method == 'GET':
-        tasks = Task.objects.prefetch_related('subtasks').all()
-        return JsonResponse([serialize_task(task) for task in tasks], safe=False)
+        payload = serialize_task_list()
+        return conditional_json_response(
+            request,
+            payload,
+            safe=False,
+            last_modified=get_tasks_last_modified(),
+        )
 
     replay_response, idempotency_key = replay_idempotent_response(request, 'tasks:POST')
     if replay_response:
@@ -43,13 +51,10 @@ def task_list_create(request):
     )
 
 
-@csrf_exempt
-@require_http_methods(['GET', 'PATCH', 'PUT', 'DELETE'])
+@api_view
+@require_http_methods(['PATCH', 'DELETE'])
 def task_detail(request, pk):
     task = get_object_or_404(Task, pk=pk)
-
-    if request.method == 'GET':
-        return JsonResponse(serialize_task(task))
 
     if request.method == 'DELETE':
         task.delete()

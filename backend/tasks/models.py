@@ -15,7 +15,6 @@ class Task(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='todo', verbose_name="진행 상태")
     priority = models.CharField(max_length=20, default='medium', verbose_name="우선순위")
     category = models.CharField(max_length=100, blank=True, default="", verbose_name="카테고리")
-    due_date = models.CharField(max_length=50, blank=True, default="", verbose_name="마감일")
     assignee_id = models.CharField(max_length=100, blank=True, default="", verbose_name="담당자 ID")
     roles = models.TextField(blank=True, default="[]", verbose_name="관련 역할군들 (JSON)")
     has_unreflected_review = models.BooleanField(default=False, verbose_name="미반영 검토 의견 존재 여부")

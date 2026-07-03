@@ -74,7 +74,6 @@ export default function TaskModal({
   const [status, setStatus] = useState<TaskStatus>('todo');
   const [priority, setPriority] = useState<TaskPriority>('medium');
   const [category, setCategory] = useState('Development');
-  const [dueDate, setDueDate] = useState('');
   const [assigneeId, setAssigneeId] = useState('');
   const [subtasks, setSubtasks] = useState<SubTask[]>([]);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
@@ -101,7 +100,6 @@ export default function TaskModal({
       setStatus(task.status);
       setPriority(task.priority || 'medium');
       setCategory(task.category || 'General');
-      setDueDate(task.dueDate);
       setAssigneeId(task.assigneeId);
       setSubtasks(task.subtasks || []);
       setRoles(task.roles || []);
@@ -118,10 +116,6 @@ export default function TaskModal({
       setStatus(initialStatus);
       setPriority('medium');
       setCategory('General');
-      // Set default due date to 5 days from today
-      const date = new Date();
-      date.setDate(date.getDate() + 5);
-      setDueDate(date.toISOString().split('T')[0]);
       setAssigneeId('');
       setSubtasks([]);
       setRoles([]);
@@ -148,7 +142,7 @@ export default function TaskModal({
 
     setIsGeneratingChecklist(true);
     try {
-      const response = await fetch('/api/v1/generate-checklist', {
+      const response = await fetch('/api/v1/generate-checklist/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -160,11 +154,11 @@ export default function TaskModal({
         }),
       });
 
+      const data = await response.json();
       if (!response.ok) {
-        throw new Error('Backend responded with an error');
+        throw new Error(data.error || 'Backend responded with an error');
       }
 
-      const data = await response.json();
       if (data.checklist && Array.isArray(data.checklist)) {
         const formattedSubtasks = data.checklist.map((item: any, index: number) => ({
           id: `sub-ai-${Date.now()}-${index}`,
@@ -187,7 +181,8 @@ export default function TaskModal({
       }
     } catch (error) {
       console.error('Error generating AI checklist from backend:', error);
-      setChecklistError('백엔드 API 호출을 통한 체크리스트 생성에 실패했습니다. (검토 기록 분석 오류)');
+      const message = error instanceof Error ? error.message : '알 수 없는 오류';
+      setChecklistError(`체크리스트 생성에 실패했습니다: ${message}`);
     } finally {
       setIsGeneratingChecklist(false);
     }
@@ -204,7 +199,6 @@ export default function TaskModal({
       status,
       priority,
       category,
-      dueDate,
       assigneeId,
       subtasks,
       createdAt: task?.createdAt,
@@ -504,18 +498,6 @@ export default function TaskModal({
                     <option value="review">검토 중</option>
                     <option value="done">완료됨</option>
                   </select>
-                </div>
-
-                {/* Due Date */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider font-sans">마감일</label>
-                  <input
-                    type="date"
-                    required
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all font-mono"
-                  />
                 </div>
 
                 {/* Priority Selection */}

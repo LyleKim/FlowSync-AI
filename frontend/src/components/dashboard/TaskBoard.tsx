@@ -393,7 +393,14 @@ export default function TaskBoard({
 
                       <span className="flex items-center gap-1 text-[10.5px] text-slate-400 dark:text-slate-500 font-mono bg-slate-50 dark:bg-slate-900/40 px-2 py-0.5 rounded-md border border-slate-100/80 dark:border-slate-800/80 shrink-0">
                         <Calendar size={11} className="text-slate-400 dark:text-slate-500" />
-                        <span>{task.dueDate.split('-').slice(1).join('/')}</span>
+                        <span>
+                          {task.createdAt
+                            ? new Date(task.createdAt).toLocaleDateString('ko-KR', {
+                                month: '2-digit',
+                                day: '2-digit',
+                              })
+                            : '-'}
+                        </span>
                       </span>
                     </div>
 

@@ -8,6 +8,4 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/v1/', include('ai_services.urls')),
     path('api/v1/tasks/', include('tasks.urls')),
-    path('api/v1/reviews/', include('reviews.urls')),
-    path('api/v1/activities/', include('activities.urls')),
 ]

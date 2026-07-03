@@ -6,7 +6,7 @@ class TaskForm(forms.ModelForm):
         model = Task
         fields = [
             'id', 'title', 'description', 'creator', 'status', 'priority',
-            'category', 'due_date', 'assignee_id', 'roles', 'has_unreflected_review',
+            'category', 'assignee_id', 'roles', 'has_unreflected_review',
             'last_review_added_at'
         ]
 

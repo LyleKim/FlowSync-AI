@@ -1,7 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Sun, Moon, Search, Plus, Bell, Sparkles, CheckSquare, History } from 'lucide-react';
 import { Task, Activity, TaskStatus } from './types';
 import { INITIAL_ACTIVITIES } from './constants/initialData';
+import {
+  fetchTasksFromServer,
+  invalidateTasksCacheHeaders,
+  TASKS_POLL_INTERVAL_MS,
+} from './services/taskSync';
 
 // Component Imports
 import Sidebar from './components/layout/Sidebar';
@@ -33,29 +38,60 @@ export default function App() {
     return saved === 'true';
   });
 
-  // Load state from API & fallback to localStorage on mount
+  const selectedTaskIdRef = useRef<string | null>(null);
+
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const res = await fetch('/api/v1/tasks/');
-        if (!res.ok) throw new Error('API response was not ok');
-        const dbTasks = await res.json();
-        const tasksFromApi = Array.isArray(dbTasks) ? dbTasks : [];
-        setTasks(tasksFromApi);
-        localStorage.setItem('tasks', JSON.stringify(tasksFromApi));
-      } catch (err) {
-        console.warn('Backend API failed, falling back to localStorage:', err);
-        const localTasks = localStorage.getItem('tasks');
-        if (localTasks) setTasks(JSON.parse(localTasks));
-        else setTasks([]);
+    selectedTaskIdRef.current = selectedTask?.id ?? null;
+  }, [selectedTask]);
+
+  const applyTasksFromServer = useCallback((tasksFromApi: Task[]) => {
+    setTasks(tasksFromApi);
+
+    const activeTaskId = selectedTaskIdRef.current;
+    if (activeTaskId) {
+      const refreshed = tasksFromApi.find((task) => task.id === activeTaskId);
+      if (refreshed) {
+        setSelectedTask(refreshed);
+      } else {
+        setIsModalOpen(false);
+        setSelectedTask(null);
+      }
+    }
+  }, []);
+
+  // Initial load + 3-minute polling with ETag / Last-Modified
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncTasks = async () => {
+      const result = await fetchTasksFromServer();
+      if (cancelled) return;
+
+      if (result.status === 'updated') {
+        applyTasksFromServer(result.tasks);
+        return;
       }
 
-      const localActivities = localStorage.getItem('activities');
-      if (localActivities) setActivities(JSON.parse(localActivities));
-      else setActivities(INITIAL_ACTIVITIES);
+      if (result.status === 'error') {
+        const localTasks = localStorage.getItem('tasks');
+        if (localTasks) setTasks(JSON.parse(localTasks));
+      }
     };
 
-    loadData();
+    syncTasks();
+    const intervalId = window.setInterval(syncTasks, TASKS_POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [applyTasksFromServer]);
+
+  // Activities: localStorage only (no backend API)
+  useEffect(() => {
+    const localActivities = localStorage.getItem('activities');
+    if (localActivities) setActivities(JSON.parse(localActivities));
+    else setActivities(INITIAL_ACTIVITIES);
   }, []);
 
   // Save states to localStorage whenever they change
@@ -104,6 +140,7 @@ export default function App() {
       t.id === id ? { ...t, status: newStatus } : t
     );
     saveTasksToLocal(updatedTasks);
+    invalidateTasksCacheHeaders();
 
     try {
       await fetch(`/api/v1/tasks/${id}/`, {
@@ -134,6 +171,7 @@ export default function App() {
 
     const updatedTasks = tasks.filter((t) => t.id !== id);
     saveTasksToLocal(updatedTasks);
+    invalidateTasksCacheHeaders();
     logActivity('deleted', originalTask.title);
 
     // If deleting active task in modal, close it and redirect to main board page
@@ -166,6 +204,7 @@ export default function App() {
         const updatedTask = await response.json();
         const updatedTasks = tasks.map((t) => (t.id === taskData.id ? updatedTask : t));
         saveTasksToLocal(updatedTasks);
+        invalidateTasksCacheHeaders();
         if (selectedTask?.id === taskData.id) {
           setSelectedTask(updatedTask);
         }
@@ -199,6 +238,7 @@ export default function App() {
         if (!response.ok) throw new Error('Failed to create task');
         const createdTask = await response.json();
         saveTasksToLocal([createdTask, ...tasks]);
+        invalidateTasksCacheHeaders();
         logActivity('created', taskData.title);
       } catch (err) {
         console.error('Failed to post task in backend, creating locally:', err);
@@ -209,7 +249,6 @@ export default function App() {
           status: taskData.status,
           priority: taskData.priority,
           category: taskData.category,
-          dueDate: taskData.dueDate,
           assigneeId: taskData.assigneeId,
           subtasks: taskData.subtasks || [],
           roles: taskData.roles || [],
