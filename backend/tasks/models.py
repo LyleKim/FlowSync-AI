@@ -17,8 +17,9 @@ class Task(models.Model):
     category = models.CharField(max_length=100, blank=True, default="", verbose_name="카테고리")
     assignee_id = models.CharField(max_length=100, blank=True, default="", verbose_name="담당자 ID")
     roles = models.TextField(blank=True, default="[]", verbose_name="관련 역할군들 (JSON)")
-    has_unreflected_review = models.BooleanField(default=False, verbose_name="미반영 검토 의견 존재 여부")
-    last_review_added_at = models.CharField(max_length=100, blank=True, default="", verbose_name="마지막 검토 일시")
+    checklist_generated_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="체크리스트 마지막 생성 일시"
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="생성 일시")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="수정 일시")
 

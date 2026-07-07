@@ -9,6 +9,13 @@ interface TaskModalProps {
   initialStatus?: TaskStatus;
   onSave: (task: Omit<Task, 'id' | 'createdAt'> & { id?: string; createdAt?: string }) => void;
   onDeleteTask: (id: string) => void;
+  onAddSubtask: (taskId: string, title: string) => Promise<SubTask>;
+  onToggleSubtask: (taskId: string, subtaskId: string, completed: boolean) => Promise<void>;
+  onRemoveSubtask: (taskId: string, subtaskId: string) => Promise<void>;
+  onReplaceSubtasks: (taskId: string, subtasks: SubTask[]) => Promise<SubTask[]>;
+  onAddReview: (taskId: string, review: Omit<RoleReview, 'id' | 'createdAt'>) => Promise<RoleReview>;
+  onUpdateReview: (taskId: string, reviewId: string, patch: Partial<RoleReview>) => Promise<void>;
+  onDeleteReview: (taskId: string, reviewId: string) => Promise<void>;
   onNavigateToStatus?: (status: TaskStatus) => void;
 }
 
@@ -66,6 +73,13 @@ export default function TaskModal({
   initialStatus = 'todo',
   onSave,
   onDeleteTask,
+  onAddSubtask,
+  onToggleSubtask,
+  onRemoveSubtask,
+  onReplaceSubtasks,
+  onAddReview,
+  onUpdateReview,
+  onDeleteReview,
   onNavigateToStatus
 }: TaskModalProps) {
   const [isEditing, setIsEditing] = useState<boolean>(false);
@@ -165,16 +179,14 @@ export default function TaskModal({
           title: item.title,
           completed: item.completed || false
         }));
-        setSubtasks(formattedSubtasks);
-
-        // 만약 기존 작업의 체크리스트 업데이트라면, 미반영 상태를 false로 클리어하고 즉시 저장
+        // 만약 기존 작업의 체크리스트 업데이트라면 하위 작업 컬렉션을 통째로 교체한다.
+        // hasUnreflectedReview 플래그 초기화는 서버가 이 PUT 처리 중에 함께 수행하므로
+        // 별도의 Task PATCH가 필요 없다.
         if (task) {
-          onSave({
-            ...task,
-            subtasks: formattedSubtasks,
-            hasUnreflectedReview: false,
-            lastReviewAddedAt: undefined
-          });
+          const replaced = await onReplaceSubtasks(task.id, formattedSubtasks);
+          setSubtasks(replaced);
+        } else {
+          setSubtasks(formattedSubtasks);
         }
       } else {
         throw new Error('Invalid checklist response format');
@@ -192,6 +204,7 @@ export default function TaskModal({
     e.preventDefault();
     if (!title.trim()) return;
 
+    // Task 자신의 필드만 다룬다. 하위 작업/검토 기록은 각자의 리소스 엔드포인트에서 관리된다.
     onSave({
       id: task?.id, // Includes id if editing
       title: title.trim(),
@@ -200,29 +213,28 @@ export default function TaskModal({
       priority,
       category,
       assigneeId,
-      subtasks,
+      subtasks: task?.subtasks || [],
       createdAt: task?.createdAt,
       roles,
-      roleReviews,
+      roleReviews: task?.roleReviews || [],
       hasUnreflectedReview: task?.hasUnreflectedReview,
       lastReviewAddedAt: task?.lastReviewAddedAt
     });
-    
+
     onClose();
   };
 
   const handleStatusChangeAndRedirect = (newStatus: TaskStatus) => {
     setShowCompletionPrompt(false);
     setStatus(newStatus);
-    
+
     if (task) {
       onSave({
         ...task,
-        status: newStatus,
-        subtasks: subtasks
+        status: newStatus
       });
     }
-    
+
     if (onNavigateToStatus) {
       onNavigateToStatus(newStatus);
     } else {
@@ -235,13 +247,12 @@ export default function TaskModal({
       st.id === subtaskId ? { ...st, completed: !st.completed } : st
     );
     setSubtasks(updated);
-    
-    // Auto-save changes immediately if in View mode
+
     if (!isEditing && task) {
-      onSave({
-        ...task,
-        subtasks: updated
-      });
+      const target = updated.find((st) => st.id === subtaskId);
+      onToggleSubtask(task.id, subtaskId, target?.completed ?? false).catch((err) =>
+        console.error('Failed to toggle subtask in backend:', err)
+      );
     }
 
     // Trigger completion prompt if all items are completed
@@ -254,134 +265,93 @@ export default function TaskModal({
 
   const addSubtask = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSubtaskTitle.trim()) return;
+    if (!newSubtaskTitle.trim() || !task) return;
 
-    const newSub: SubTask = {
-      id: 'sub-' + Date.now(),
-      title: newSubtaskTitle.trim(),
-      completed: false
-    };
-
-    const updated = [...subtasks, newSub];
-    setSubtasks(updated);
+    const titleToAdd = newSubtaskTitle.trim();
     setNewSubtaskTitle('');
 
-    // Auto-save changes immediately if in View mode
-    if (!isEditing && task) {
-      onSave({
-        ...task,
-        subtasks: updated
-      });
-    }
+    onAddSubtask(task.id, titleToAdd)
+      .then((created) => setSubtasks((prev) => [...prev, created]))
+      .catch((err) => console.error('Failed to add subtask in backend:', err));
   };
 
   const removeSubtask = (subtaskId: string) => {
+    if (!task) return;
+
     const updated = subtasks.filter((st) => st.id !== subtaskId);
     setSubtasks(updated);
 
-    // Auto-save changes immediately if in View mode
-    if (!isEditing && task) {
-      onSave({
-        ...task,
-        subtasks: updated
-      });
-    }
+    onRemoveSubtask(task.id, subtaskId).catch((err) =>
+      console.error('Failed to remove subtask in backend:', err)
+    );
   };
 
   const addRoleReview = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newReviewComment.trim()) return;
+    if (!newReviewComment.trim() || !task) return;
 
     const finalRole = newReviewRole === 'Custom' ? customRoleText.trim() : newReviewRole;
     if (!finalRole) return;
 
-    const newReview: RoleReview = {
-      id: 'rev-' + Date.now(),
+    const reviewInput = {
       role: finalRole,
       comment: newReviewComment.trim(),
       reviewerId: newReviewReviewerId || undefined,
       isAccepted: false,
-      urgency: newReviewUrgency,
-      createdAt: new Date().toLocaleDateString('ko-KR', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-      })
+      urgency: newReviewUrgency
     };
 
-    const updated = [...roleReviews, newReview];
-    setRoleReviews(updated);
     setNewReviewComment('');
     setCustomRoleText('');
     setNewReviewReviewerId('');
     setNewReviewUrgency('normal');
 
-    const timeString = new Date().toLocaleTimeString('ko-KR', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
-    });
-
-    const isFirstReview = roleReviews.length === 0;
-    const shouldMoveToInProgress = status === 'todo' && isFirstReview;
-    const nextStatus = shouldMoveToInProgress ? 'inprogress' as TaskStatus : status;
-
+    const shouldMoveToInProgress = status === 'todo' && roleReviews.length === 0;
     if (shouldMoveToInProgress) {
       setStatus('inprogress');
     }
 
-    // Auto-save changes immediately if in View mode
-    if (!isEditing && task) {
-      onSave({
-        ...task,
-        status: nextStatus,
-        roleReviews: updated,
-        hasUnreflectedReview: true,
-        lastReviewAddedAt: timeString
-      });
-    }
+    // 리뷰 자체는 reviews 리소스에 저장한다. hasUnreflectedReview/lastReviewAddedAt은
+    // 서버가 조회 시점에 계산하는 값이라 여기서 따로 보낼 게 없다. status 전환은
+    // "첫 리뷰"일 때만 실제로 값이 바뀌므로 그 경우에만 Task를 PATCH한다.
+    onAddReview(task.id, reviewInput)
+      .then((created) => {
+        setRoleReviews((prev) => [...prev, created]);
+        if (shouldMoveToInProgress) {
+          onSave({ ...task, status: 'inprogress' });
+        }
+      })
+      .catch((err) => console.error('Failed to add review in backend:', err));
   };
 
   const acceptRoleReview = (reviewId: string) => {
-    const updated = roleReviews.map((r) =>
-      r.id === reviewId
-        ? {
-            ...r,
-            isAccepted: true,
-            acceptedAt: new Date().toLocaleDateString('ko-KR', {
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit'
-            })
-          }
-        : r
-    );
-    setRoleReviews(updated);
+    if (!task) return;
 
-    // Auto-save changes immediately if in View mode
-    if (!isEditing && task) {
-      onSave({
-        ...task,
-        roleReviews: updated
-      });
-    }
+    const acceptedAt = new Date().toLocaleDateString('ko-KR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    setRoleReviews((prev) =>
+      prev.map((r) => (r.id === reviewId ? { ...r, isAccepted: true, acceptedAt } : r))
+    );
+
+    onUpdateReview(task.id, reviewId, { isAccepted: true, acceptedAt }).catch((err) =>
+      console.error('Failed to accept review in backend:', err)
+    );
   };
 
   const deleteRoleReview = (reviewId: string) => {
-    const updated = roleReviews.filter((r) => r.id !== reviewId);
-    setRoleReviews(updated);
+    if (!task) return;
 
-    // Auto-save changes immediately if in View mode
-    if (!isEditing && task) {
-      onSave({
-        ...task,
-        roleReviews: updated
-      });
-    }
+    setRoleReviews((prev) => prev.filter((r) => r.id !== reviewId));
+
+    onDeleteReview(task.id, reviewId).catch((err) =>
+      console.error('Failed to delete review in backend:', err)
+    );
   };
 
   return (

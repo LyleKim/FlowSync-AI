@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Sun, Moon, Search, Plus, Bell, Sparkles, CheckSquare, History } from 'lucide-react';
-import { Task, Activity, TaskStatus } from './types';
+import { Task, Activity, TaskStatus, SubTask, RoleReview } from './types';
 import { INITIAL_ACTIVITIES } from './constants/initialData';
 import {
   fetchTasksFromServer,
@@ -260,6 +260,125 @@ export default function App() {
     }
   };
 
+  // Apply a server-confirmed change to one task's sub-resource (subtasks/reviews)
+  // into both the global task list and the currently open modal, if any.
+  const updateTaskInState = (taskId: string, updater: (t: Task) => Task) => {
+    setTasks((prev) => {
+      const next = prev.map((t) => (t.id === taskId ? updater(t) : t));
+      localStorage.setItem('tasks', JSON.stringify(next));
+      return next;
+    });
+    setSelectedTask((prev) => (prev && prev.id === taskId ? updater(prev) : prev));
+    invalidateTasksCacheHeaders();
+  };
+
+  // --- SubTask resource handlers (/api/v1/tasks/<id>/subtasks/...) ---
+  const handleAddSubtask = async (taskId: string, title: string): Promise<SubTask> => {
+    const response = await fetch(`/api/v1/tasks/${taskId}/subtasks/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, completed: false }),
+    });
+    if (!response.ok) throw new Error('Failed to add subtask');
+    const created: SubTask = await response.json();
+    updateTaskInState(taskId, (t) => ({ ...t, subtasks: [...t.subtasks, created] }));
+    return created;
+  };
+
+  const handleToggleSubtask = async (taskId: string, subtaskId: string, completed: boolean) => {
+    const response = await fetch(`/api/v1/tasks/${taskId}/subtasks/${subtaskId}/`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ completed }),
+    });
+    if (!response.ok) throw new Error('Failed to update subtask');
+    const updated: SubTask = await response.json();
+    updateTaskInState(taskId, (t) => ({
+      ...t,
+      subtasks: t.subtasks.map((s) => (s.id === subtaskId ? updated : s)),
+    }));
+  };
+
+  const handleRemoveSubtask = async (taskId: string, subtaskId: string) => {
+    const response = await fetch(`/api/v1/tasks/${taskId}/subtasks/${subtaskId}/`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('Failed to delete subtask');
+    updateTaskInState(taskId, (t) => ({
+      ...t,
+      subtasks: t.subtasks.filter((s) => s.id !== subtaskId),
+    }));
+  };
+
+  // Full-collection replace, used by AI checklist (re)generation.
+  const handleReplaceSubtasks = async (taskId: string, subtasks: SubTask[]): Promise<SubTask[]> => {
+    const response = await fetch(`/api/v1/tasks/${taskId}/subtasks/`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(subtasks),
+    });
+    if (!response.ok) throw new Error('Failed to replace subtasks');
+    const updated: SubTask[] = await response.json();
+    // 서버가 이 PUT 처리 중에 hasUnreflectedReview/lastReviewAddedAt도 함께 초기화하므로
+    // 별도 PATCH 없이 로컬 상태만 맞춰준다.
+    updateTaskInState(taskId, (t) => ({
+      ...t,
+      subtasks: updated,
+      hasUnreflectedReview: false,
+      lastReviewAddedAt: undefined,
+    }));
+    return updated;
+  };
+
+  // --- RoleReview resource handlers (/api/v1/tasks/<id>/reviews/...) ---
+  const handleAddReview = async (
+    taskId: string,
+    review: Omit<RoleReview, 'id' | 'createdAt'>
+  ): Promise<RoleReview> => {
+    const response = await fetch(`/api/v1/tasks/${taskId}/reviews/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(review),
+    });
+    if (!response.ok) throw new Error('Failed to add review');
+    const created: RoleReview = await response.json();
+    // hasUnreflectedReview/lastReviewAddedAt은 서버가 조회 시점에 계산하는 값이라
+    // 별도로 PATCH하지 않는다. 다음 폴링 전까지 배너를 바로 보여주기 위해
+    // 로컬 상태만 낙관적으로 맞춰준다.
+    updateTaskInState(taskId, (t) => ({
+      ...t,
+      roleReviews: [...(t.roleReviews || []), created],
+      hasUnreflectedReview: true,
+      lastReviewAddedAt: created.createdAt,
+    }));
+    return created;
+  };
+
+  const handleUpdateReview = async (taskId: string, reviewId: string, patch: Partial<RoleReview>) => {
+    const response = await fetch(`/api/v1/tasks/${taskId}/reviews/${reviewId}/`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!response.ok) throw new Error('Failed to update review');
+    const updated: RoleReview = await response.json();
+    updateTaskInState(taskId, (t) => ({
+      ...t,
+      roleReviews: (t.roleReviews || []).map((r) => (r.id === reviewId ? updated : r)),
+    }));
+  };
+
+  const handleDeleteReview = async (taskId: string, reviewId: string) => {
+    const response = await fetch(`/api/v1/tasks/${taskId}/reviews/${reviewId}/`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('Failed to delete review');
+    updateTaskInState(taskId, (t) => ({
+      ...t,
+      roleReviews: (t.roleReviews || []).filter((r) => r.id !== reviewId),
+    }));
+  };
+
   const handleTabChange = (tab: 'board' | 'list' | 'analytics') => {
     setActiveTab(tab);
     setSelectedKanbanStatus(null);
@@ -390,6 +509,13 @@ export default function App() {
         initialStatus={initialStatusForNewTask}
         onSave={handleSaveTask}
         onDeleteTask={handleDeleteTask}
+        onAddSubtask={handleAddSubtask}
+        onToggleSubtask={handleToggleSubtask}
+        onRemoveSubtask={handleRemoveSubtask}
+        onReplaceSubtasks={handleReplaceSubtasks}
+        onAddReview={handleAddReview}
+        onUpdateReview={handleUpdateReview}
+        onDeleteReview={handleDeleteReview}
         onNavigateToStatus={(status) => {
           setActiveTab('board');
           setSelectedKanbanStatus(null); // Go to main page (all columns portal)

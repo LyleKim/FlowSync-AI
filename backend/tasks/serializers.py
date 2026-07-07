@@ -1,8 +1,6 @@
 import json
 import uuid
 
-from django.utils import timezone
-
 from reviews.models import RoleReview
 from reviews.serializers import serialize_review, map_review_body_to_model
 from reviews.forms import RoleReviewForm
@@ -23,9 +21,21 @@ def _parse_roles(raw_roles):
         return []
 
 
+def serialize_subtask(subtask):
+    return {'id': subtask.id, 'title': subtask.title, 'completed': subtask.completed}
+
+
 def serialize_task(task):
     """프론트엔드 Task 타입(camelCase)에 맞춘 직렬화."""
-    reviews = RoleReview.objects.filter(task_id=task.id)
+    reviews = list(RoleReview.objects.filter(task_id=task.id))
+    latest_review_at = max((r.created_at for r in reviews), default=None)
+
+    # "미반영 검토 존재 여부"는 저장된 플래그가 아니라, 가장 최근 리뷰 시각과
+    # 체크리스트를 마지막으로 (재)생성한 시각을 비교해서 그때그때 계산한다.
+    has_unreflected_review = bool(
+        latest_review_at
+        and (not task.checklist_generated_at or latest_review_at > task.checklist_generated_at)
+    )
 
     return {
         'id': task.id,
@@ -35,15 +45,12 @@ def serialize_task(task):
         'priority': task.priority,
         'category': task.category,
         'assigneeId': task.creator or task.assignee_id,
-        'subtasks': [
-            {'id': subtask.id, 'title': subtask.title, 'completed': subtask.completed}
-            for subtask in task.subtasks.all()
-        ],
+        'subtasks': [serialize_subtask(subtask) for subtask in task.subtasks.all()],
         'createdAt': task.created_at.isoformat() if task.created_at else None,
         'roles': _parse_roles(task.roles),
         'roleReviews': [serialize_review(review) for review in reviews],
-        'hasUnreflectedReview': task.has_unreflected_review,
-        'lastReviewAddedAt': task.last_review_added_at or None,
+        'hasUnreflectedReview': has_unreflected_review,
+        'lastReviewAddedAt': latest_review_at.isoformat() if latest_review_at else None,
     }
 
 
@@ -94,12 +101,6 @@ def task_payload_matches(existing, body):
         existing.category == body.get('category', existing.category),
         (existing.creator or '') == (assignee or existing.creator or ''),
         (existing.assignee_id or '') == (assignee or existing.assignee_id or ''),
-        existing.has_unreflected_review == body.get(
-            'hasUnreflectedReview', existing.has_unreflected_review
-        ),
-        (existing.last_review_added_at or '') == (
-            body.get('lastReviewAddedAt', existing.last_review_added_at) or ''
-        ),
     ])
 
     if not scalar_matches:
@@ -119,51 +120,11 @@ def task_payload_matches(existing, body):
 def _task_scalar_fields_changed(task, model_data):
     for field in (
         'title', 'description', 'creator', 'status', 'priority', 'category',
-        'assignee_id', 'roles', 'has_unreflected_review', 'last_review_added_at',
+        'assignee_id', 'roles',
     ):
         if getattr(task, field) != model_data.get(field):
             return True
     return False
-
-
-def _subtasks_changed(task, subtasks_data):
-    return _existing_subtasks(task) != _normalized_subtasks(subtasks_data)
-
-
-def _role_reviews_changed(task, reviews_data):
-    existing = sorted(
-        [
-            {
-                'id': review.id,
-                'role': review.role,
-                'comment': review.comment,
-                'reviewerId': review.reviewer_id or review.reviewer_name,
-                'isAccepted': review.is_accepted,
-                'acceptedAt': review.accepted_at or None,
-                'urgency': review.urgency,
-                'nextReviewerTag': review.next_reviewer_tag or None,
-            }
-            for review in RoleReview.objects.filter(task_id=task.id)
-        ],
-        key=lambda item: item['id'],
-    )
-    incoming = sorted(
-        [
-            {
-                'id': review.get('id', ''),
-                'role': review.get('role', ''),
-                'comment': review.get('comment', ''),
-                'reviewerId': review.get('reviewerId') or review.get('reviewer_id', ''),
-                'isAccepted': review.get('isAccepted', review.get('is_accepted', False)),
-                'acceptedAt': review.get('acceptedAt', review.get('accepted_at')) or None,
-                'urgency': review.get('urgency', 'normal'),
-                'nextReviewerTag': review.get('nextReviewerTag', review.get('next_reviewer_tag')) or None,
-            }
-            for review in (reviews_data or [])
-        ],
-        key=lambda item: item['id'],
-    )
-    return existing != incoming
 
 
 def map_body_to_model_data(body, instance=None):
@@ -182,14 +143,6 @@ def map_body_to_model_data(body, instance=None):
         'priority': body.get('priority', instance.priority if instance else 'medium'),
         'category': body.get('category', instance.category if instance else ''),
         'assignee_id': assignee or (instance.assignee_id if instance else ''),
-        'has_unreflected_review': body.get(
-            'hasUnreflectedReview',
-            instance.has_unreflected_review if instance else False,
-        ),
-        'last_review_added_at': body.get(
-            'lastReviewAddedAt',
-            instance.last_review_added_at if instance else '',
-        ) or '',
     }
 
     if 'roles' in body:
@@ -231,6 +184,59 @@ def save_subtasks(task, subtasks_data, *, replace=False):
         task.subtasks.exclude(id__in=incoming_ids).delete()
 
     return None
+
+
+def subtask_payload_matches(existing, body):
+    """POST 재시도 시 동일 리소스인지 판별."""
+    return (
+        existing.title == body.get('title', existing.title)
+        and existing.completed == body.get('completed', existing.completed)
+    )
+
+
+def create_subtask_from_body(task, body):
+    """
+    하위 작업 생성.
+    반환: (subtask, errors, outcome)
+    outcome: 'created' | 'replayed' | None(실패)
+    """
+    subtask_id = (body.get('id') or '').strip()
+    if subtask_id:
+        existing = SubTask.objects.filter(pk=subtask_id, task=task).first()
+        if existing:
+            if subtask_payload_matches(existing, body):
+                return existing, None, 'replayed'
+            return None, {
+                'id': ['동일 ID의 하위 작업이 이미 다른 내용으로 존재합니다.']
+            }, None
+
+    form = SubTaskForm({
+        'id': subtask_id or f"sub-{uuid.uuid4().hex[:8]}",
+        'task': task.id,
+        'title': body.get('title', ''),
+        'completed': body.get('completed', False),
+    })
+    if not form.is_valid():
+        return None, form.errors, None
+
+    return form.save(), None, 'created'
+
+
+def update_subtask_from_body(subtask, body):
+    """하위 작업 수정(PATCH). 자신의 필드만 다룬다."""
+    form = SubTaskForm(
+        {
+            'id': subtask.id,
+            'task': subtask.task_id,
+            'title': body.get('title', subtask.title),
+            'completed': body.get('completed', subtask.completed),
+        },
+        instance=subtask,
+    )
+    if not form.is_valid():
+        return None, form.errors
+
+    return form.save(), None
 
 
 def save_role_reviews(task, reviews_data, *, replace=False):
@@ -297,36 +303,18 @@ def create_task_from_body(body):
 
 def update_task_from_body(task, body):
     """
-    작업 수정(PATCH/PUT).
+    작업 수정(PATCH).
+    Task 자신의 필드만 다룬다. 하위 작업/검토 기록은 각자의 리소스 엔드포인트
+    (/tasks/<id>/subtasks/, /tasks/<id>/reviews/)를 통해 관리한다.
     동일 요청 재전송 시 불필요한 DB 쓰기를 건너뛰어 멱등하게 동작.
     """
     model_data = map_body_to_model_data(body, instance=task)
 
-    scalar_changed = _task_scalar_fields_changed(task, model_data)
-    subtasks_changed = 'subtasks' in body and _subtasks_changed(task, body.get('subtasks'))
-    reviews_changed = 'roleReviews' in body and _role_reviews_changed(task, body.get('roleReviews'))
-
-    if not scalar_changed and not subtasks_changed and not reviews_changed:
+    if not _task_scalar_fields_changed(task, model_data):
         return task, None
 
-    if scalar_changed:
-        form = TaskForm(model_data, instance=task)
-        if not form.is_valid():
-            return None, form.errors
-        task = form.save()
+    form = TaskForm(model_data, instance=task)
+    if not form.is_valid():
+        return None, form.errors
 
-    if subtasks_changed:
-        subtask_errors = save_subtasks(task, body.get('subtasks', []), replace=True)
-        if subtask_errors:
-            return None, subtask_errors
-        Task.objects.filter(pk=task.pk).update(updated_at=timezone.now())
-        task.refresh_from_db()
-
-    if reviews_changed:
-        review_errors = save_role_reviews(task, body.get('roleReviews', []), replace=True)
-        if review_errors:
-            return None, review_errors
-        Task.objects.filter(pk=task.pk).update(updated_at=timezone.now())
-        task.refresh_from_db()
-
-    return task, None
+    return form.save(), None
