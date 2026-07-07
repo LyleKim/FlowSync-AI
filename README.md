@@ -112,7 +112,7 @@
   API 설계 평가 및 작성  
   에러 구조 파악 및 수정
   
-- Claude : 
+- Claude :  
   Cursor와 교차 검증
 
 <br/>
